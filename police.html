@@ -75,7 +75,7 @@ let map, userMarker, pulseCircle, userPosition;
 let pulseRadius = 0, growing = true, firstUpdate = true;
 let userId = 'user_' + Date.now();
 let sosActive = false;
-let otherUsers = {}; // other users' markers
+let otherUsers = {}; // store other users' markers + circles
 let policeMarkers = [];
 let openInfoWindow = null;
 let directionsService, directionsRenderer;
@@ -163,7 +163,7 @@ function initUserLocation() {
   }
 }
 
-// Animate pulse circle
+// Animate my pulsing circle
 function animatePulse() {
   if (growing) pulseRadius += 5;
   else pulseRadius -= 5;
@@ -236,8 +236,8 @@ function listenForOtherUsers() {
       const data = allUsers[uid];
 
       if (!otherUsers[uid]) {
-        // create new marker
-        otherUsers[uid] = new google.maps.Marker({
+        // create marker + optional circle
+        const marker = new google.maps.Marker({
           position: { lat: data.lat, lng: data.lng },
           map: map,
           icon: {
@@ -248,27 +248,86 @@ function listenForOtherUsers() {
             strokeWeight: 0,
           }
         });
+
+        let circle = null;
+        if (data.sos) {
+          circle = new google.maps.Circle({
+            strokeColor: "#FF0000",
+            strokeOpacity: 0.5,
+            strokeWeight: 2,
+            fillColor: "#FF0000",
+            fillOpacity: 0.2,
+            map: map,
+            center: { lat: data.lat, lng: data.lng },
+            radius: 50
+          });
+          animateOtherPulse(uid);
+        }
+
+        otherUsers[uid] = { marker, circle, radius: 50, growing: true };
       } else {
         // update existing marker
-        otherUsers[uid].setPosition({ lat: data.lat, lng: data.lng });
-        otherUsers[uid].setIcon({
+        otherUsers[uid].marker.setPosition({ lat: data.lat, lng: data.lng });
+        otherUsers[uid].marker.setIcon({
           path: google.maps.SymbolPath.CIRCLE,
           scale: 10,
           fillColor: data.sos ? "#FF0000" : "#4285F4",
           fillOpacity: 1,
           strokeWeight: 0,
         });
+
+        // handle SOS pulsing
+        if (data.sos) {
+          if (!otherUsers[uid].circle) {
+            otherUsers[uid].circle = new google.maps.Circle({
+              strokeColor: "#FF0000",
+              strokeOpacity: 0.5,
+              strokeWeight: 2,
+              fillColor: "#FF0000",
+              fillOpacity: 0.2,
+              map: map,
+              center: { lat: data.lat, lng: data.lng },
+              radius: 50
+            });
+            otherUsers[uid].radius = 50;
+            otherUsers[uid].growing = true;
+            animateOtherPulse(uid);
+          } else {
+            otherUsers[uid].circle.setCenter({ lat: data.lat, lng: data.lng });
+          }
+        } else {
+          if (otherUsers[uid].circle) {
+            otherUsers[uid].circle.setMap(null);
+            otherUsers[uid].circle = null;
+          }
+        }
       }
     });
 
-    // cleanup markers if user disappeared
+    // cleanup removed users
     Object.keys(otherUsers).forEach(uid => {
       if (!allUsers[uid]) {
-        otherUsers[uid].setMap(null);
+        if (otherUsers[uid].circle) otherUsers[uid].circle.setMap(null);
+        otherUsers[uid].marker.setMap(null);
         delete otherUsers[uid];
       }
     });
   });
+}
+
+// Animate pulsing circle for other SOS users
+function animateOtherPulse(uid) {
+  const u = otherUsers[uid];
+  if (!u || !u.circle) return;
+
+  if (u.growing) u.radius += 3;
+  else u.radius -= 3;
+
+  if (u.radius > screenPercentToMeters(15)) u.growing = false;
+  if (u.radius < 20) u.growing = true;
+
+  u.circle.setRadius(u.radius);
+  requestAnimationFrame(() => animateOtherPulse(uid));
 }
 
 // ================= POLICE STATIONS =================
