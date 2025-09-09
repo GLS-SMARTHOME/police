@@ -33,18 +33,6 @@
   #sos-btn:active {
     background-color: #cc0000;
   }
-  button.info-btn {
-    padding: 5px 10px;
-    margin-top: 5px;
-    background-color: #4285F4;
-    color: white;
-    border: none;
-    border-radius: 3px;
-    cursor: pointer;
-  }
-  button.info-btn:hover {
-    background-color: #3367D6;
-  }
 </style>
 </head>
 <body>
@@ -69,28 +57,31 @@ const firebaseConfig = {
 firebase.initializeApp(firebaseConfig);
 const database = firebase.database();
 
-let map, userMarker, pulseCircle, userPosition;
-let pulseRadius = 0, growing = true, firstUpdate = true;
-let userId = 'user_' + Date.now();
-let directionsService, directionsRenderer;
-let openInfoWindow = null;
+let map, directionsService, directionsRenderer;
+let userId = "user_" + Date.now();
+let userPosition = null;
+let firstUpdate = true;
 let sosActive = false;
 
+let userMarker, pulseCircle, pulseRadius = 0, growing = true;
+
+// Store all other users
+let otherUsers = {}; 
+
 function initMap() {
-  map = new google.maps.Map(document.getElementById('map'), {
+  map = new google.maps.Map(document.getElementById("map"), {
     zoom: 15,
     center: { lat: 0, lng: 0 },
   });
 
   directionsService = new google.maps.DirectionsService();
-  directionsRenderer = new google.maps.DirectionsRenderer({ suppressMarkers: false });
+  directionsRenderer = new google.maps.DirectionsRenderer();
   directionsRenderer.setMap(map);
 
-  loadPoliceStations();
   initUserLocation();
+  listenOtherUsers();
 
-  // SOS button click
-  document.getElementById('sos-btn').addEventListener('click', triggerSOS);
+  document.getElementById("sos-btn").addEventListener("click", triggerSOS);
 }
 
 function initUserLocation() {
@@ -107,161 +98,147 @@ function initUserLocation() {
           firstUpdate = false;
         }
 
-        if (!userMarker) {
-          const scaleSize = window.innerWidth < 600 ? 6 : 8;
-          userMarker = new google.maps.Marker({
-            position: userPosition,
-            map: map,
-            icon: {
-              path: google.maps.SymbolPath.CIRCLE,
-              scale: scaleSize,
-              fillColor: sosActive ? "#FF0000" : "#4285F4",
-              fillOpacity: 1,
-              strokeWeight: 0,
-            }
-          });
-
-          pulseCircle = new google.maps.Circle({
-            strokeColor: sosActive ? "#FF0000" : "#4285F4",
-            strokeOpacity: 0.5,
-            strokeWeight: 2,
-            fillColor: sosActive ? "#FF0000" : "#4285F4",
-            fillOpacity: 0.2,
-            map: map,
-            center: userPosition,
-            radius: pulseRadius
-          });
-
-          requestAnimationFrame(animatePulse);
-        } else {
-          userMarker.setPosition(userPosition);
-          pulseCircle.setCenter(userPosition);
-        }
-
-        // Save location and SOS
-        database.ref('users/' + userId).set({
-          lat: userPosition.lat,
-          lng: userPosition.lng,
-          sos: sosActive,
-          timestamp: Date.now()
-        });
-
-        // Update open info window distance
-        if (openInfoWindow && openInfoWindow.station) {
-          updateInfoWindow(openInfoWindow, openInfoWindow.station);
-        }
+        updateUserMarker();
+        saveUserLocation();
       },
-      (error) => console.error("Error getting location:", error),
+      (err) => console.error("Geolocation error:", err),
       { enableHighAccuracy: true, maximumAge: 0, timeout: 5000 }
     );
   } else {
-    alert("Geolocation not supported.");
+    alert("Geolocation not supported");
+  }
+}
+
+function updateUserMarker() {
+  const color = sosActive ? "#FF0000" : "#4285F4";
+  const scaleSize = window.innerWidth < 600 ? 10 : 14;
+
+  if (!userMarker) {
+    userMarker = new google.maps.Marker({
+      position: userPosition,
+      map: map,
+      icon: {
+        path: google.maps.SymbolPath.CIRCLE,
+        scale: scaleSize,
+        fillColor: color,
+        fillOpacity: 1,
+        strokeWeight: 0,
+      },
+    });
+
+    pulseCircle = new google.maps.Circle({
+      strokeColor: color,
+      strokeOpacity: 0.5,
+      strokeWeight: 2,
+      fillColor: color,
+      fillOpacity: 0.2,
+      map: map,
+      center: userPosition,
+      radius: 0,
+    });
+
+    requestAnimationFrame(animatePulse);
+  } else {
+    userMarker.setPosition(userPosition);
+    userMarker.setIcon({
+      path: google.maps.SymbolPath.CIRCLE,
+      scale: scaleSize,
+      fillColor: color,
+      fillOpacity: 1,
+      strokeWeight: 0,
+    });
+    pulseCircle.setOptions({ strokeColor: color, fillColor: color });
+    pulseCircle.setCenter(userPosition);
   }
 }
 
 function animatePulse() {
-  if (growing) pulseRadius += 1;
-  else pulseRadius -= 1;
+  if (!pulseCircle) return;
+  if (growing) pulseRadius += 5;
+  else pulseRadius -= 5;
 
-  let maxRadius = sosActive ? 100 : 50;
+  let maxRadius = sosActive ? screenPercentToMeters(20) : screenPercentToMeters(10);
   if (pulseRadius > maxRadius) growing = false;
-  if (pulseRadius < 5) growing = true;
+  if (pulseRadius < 20) growing = true;
 
-  if (pulseCircle) pulseCircle.setRadius(pulseRadius);
+  pulseCircle.setRadius(pulseRadius);
   requestAnimationFrame(animatePulse);
 }
 
+// Convert % of screen width to meters
+function screenPercentToMeters(percent) {
+  if (!map || !userPosition) return 100;
+  const bounds = map.getBounds();
+  if (!bounds) return 100;
+
+  const center = map.getCenter();
+  const ne = bounds.getNorthEast();
+  const sw = bounds.getSouthWest();
+
+  const east = { lat: center.lat(), lng: ne.lng() };
+  const west = { lat: center.lat(), lng: sw.lng() };
+  const mapWidthMeters = getDistance(east.lat, east.lng, west.lat, west.lng) * 1000;
+
+  return (mapWidthMeters * percent) / 100;
+}
+
+// Save my location to Firebase
+function saveUserLocation() {
+  if (!userPosition) return;
+  database.ref("users/" + userId).set({
+    lat: userPosition.lat,
+    lng: userPosition.lng,
+    sos: sosActive,
+    timestamp: Date.now(),
+  });
+}
+
 function triggerSOS() {
-  sosActive = true;
-  if (userMarker) {
-    userMarker.setIcon({
-      path: google.maps.SymbolPath.CIRCLE,
-      scale: window.innerWidth < 600 ? 6 : 8,
-      fillColor: "#FF0000",
-      fillOpacity: 1,
-      strokeWeight: 0,
-    });
-  }
-  if (pulseCircle) {
-    pulseCircle.setOptions({
-      strokeColor: "#FF0000",
-      fillColor: "#FF0000"
-    });
-  }
-  alert("SOS Activated!");
+  sosActive = !sosActive;
+  updateUserMarker();
+  saveUserLocation();
+  alert(sosActive ? "🚨 SOS Activated!" : "✅ SOS Deactivated");
 }
 
-let policeInfoWindows = [];
+// Listen for other users in Firebase
+function listenOtherUsers() {
+  const usersRef = database.ref("users");
+  usersRef.on("value", (snapshot) => {
+    const users = snapshot.val();
+    if (!users) return;
 
-function loadPoliceStations() {
-  const stationsRef = database.ref('police_stations');
-  stationsRef.on('value', (snapshot) => {
-    const stations = snapshot.val();
-    if (stations) {
-      Object.keys(stations).forEach(key => {
-        const station = stations[key];
+    Object.keys(users).forEach((id) => {
+      if (id === userId) return; // skip myself
+      const data = users[id];
+
+      if (!otherUsers[id]) {
         const marker = new google.maps.Marker({
-          position: { lat: station.lat, lng: station.lng },
+          position: { lat: data.lat, lng: data.lng },
           map: map,
-          title: station.name,
           icon: {
-            url: 'https://maps.google.com/mapfiles/ms/icons/police.png',
-            scaledSize: new google.maps.Size(40, 40)
-          }
+            path: google.maps.SymbolPath.CIRCLE,
+            scale: 10,
+            fillColor: data.sos ? "#FF0000" : "#4285F4",
+            fillOpacity: 1,
+            strokeWeight: 0,
+          },
         });
-
-        const infoWindow = new google.maps.InfoWindow();
-        policeInfoWindows.push({ infoWindow, marker, station });
-
-        marker.addListener('click', () => {
-          if (openInfoWindow) openInfoWindow.close();
-          openInfoWindow = infoWindow;
-          openInfoWindow.station = station;
-          updateInfoWindow(infoWindow, station, true);
-          infoWindow.open(map, marker);
+        otherUsers[id] = marker;
+      } else {
+        otherUsers[id].setPosition({ lat: data.lat, lng: data.lng });
+        otherUsers[id].setIcon({
+          path: google.maps.SymbolPath.CIRCLE,
+          scale: 10,
+          fillColor: data.sos ? "#FF0000" : "#4285F4",
+          fillOpacity: 1,
+          strokeWeight: 0,
         });
-      });
-    }
+      }
+    });
   });
 }
 
-function updateInfoWindow(infoWindow, station, showButton = false) {
-  let distanceText = '';
-  if (userPosition) {
-    const distance = getDistance(userPosition.lat, userPosition.lng, station.lat, station.lng);
-    distanceText = `<p>Distance: ${distance.toFixed(2)} km</p>`;
-  }
-  let buttonHTML = '';
-  if (showButton && userPosition) {
-    buttonHTML = `<button class="info-btn" onclick="createRoute(${station.lat}, ${station.lng})">Create Route</button>`;
-  }
-  infoWindow.setContent(`
-    <div>
-      <h3>${station.name}</h3>
-      <p>Phone: ${station.phone || 'N/A'}</p>
-      ${distanceText}
-      ${buttonHTML}
-    </div>
-  `);
-}
-
-function createRoute(lat, lng) {
-  if (!userPosition) return alert("User location not available");
-  if (!directionsService || !directionsRenderer) return;
-
-  directionsService.route({
-    origin: userPosition,
-    destination: { lat: lat, lng: lng },
-    travelMode: 'DRIVING'
-  }, (result, status) => {
-    if (status === 'OK') {
-      directionsRenderer.setDirections(result);
-    } else {
-      alert("Could not create route: " + status);
-    }
-  });
-}
-
+// Utility distance in km
 function getDistance(lat1, lng1, lat2, lng2) {
   function toRad(x) { return x * Math.PI / 180; }
   const R = 6371;
