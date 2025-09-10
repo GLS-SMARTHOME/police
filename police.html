@@ -73,12 +73,19 @@ const database = firebase.database();
 
 let map, userMarker, pulseCircle, userPosition;
 let pulseRadius = 0, growing = true, firstUpdate = true;
-let userId = 'user_' + Date.now();
+let userId = localStorage.getItem("userId");
+if (!userId) {
+  userId = "user_" + Date.now();
+  localStorage.setItem("userId", userId);
+}
 let sosActive = false;
-let otherUsers = {}; // store other users' markers + circles
+let otherUsers = {};
 let policeMarkers = [];
 let openInfoWindow = null;
 let directionsService, directionsRenderer;
+
+let lastPosition = null;
+const MOVE_THRESHOLD_METERS = 5;
 
 function initMap() {
   map = new google.maps.Map(document.getElementById('map'), {
@@ -95,62 +102,84 @@ function initMap() {
   loadPoliceStations();
 
   document.getElementById('sos-btn').addEventListener('click', triggerSOS);
+
+  window.addEventListener("beforeunload", () => {
+    database.ref("users/" + userId).remove();
+  });
 }
 
 function initUserLocation() {
   if (navigator.geolocation) {
     navigator.geolocation.watchPosition(
       (position) => {
-        userPosition = {
+        const newPosition = {
           lat: position.coords.latitude,
           lng: position.coords.longitude,
         };
 
         if (firstUpdate) {
-          map.setCenter(userPosition);
+          map.setCenter(newPosition);
           firstUpdate = false;
         }
 
-        if (!userMarker) {
-          const scaleSize = window.innerWidth < 600 ? 10 : 14;
-          userMarker = new google.maps.Marker({
-            position: userPosition,
-            map: map,
-            icon: {
-              path: google.maps.SymbolPath.CIRCLE,
-              scale: scaleSize,
-              fillColor: "#4285F4",
-              fillOpacity: 1,
-              strokeWeight: 0,
-            }
-          });
-
-          pulseCircle = new google.maps.Circle({
-            strokeColor: "#4285F4",
-            strokeOpacity: 0.5,
-            strokeWeight: 2,
-            fillColor: "#4285F4",
-            fillOpacity: 0.2,
-            map: map,
-            center: userPosition,
-            radius: pulseRadius
-          });
-
-          requestAnimationFrame(animatePulse);
+        let moved = false;
+        if (!lastPosition) {
+          moved = true;
         } else {
-          userMarker.setPosition(userPosition);
-          pulseCircle.setCenter(userPosition);
+          const distance = getDistance(
+            lastPosition.lat,
+            lastPosition.lng,
+            newPosition.lat,
+            newPosition.lng
+          ) * 1000;
+          if (distance >= MOVE_THRESHOLD_METERS) {
+            moved = true;
+          }
         }
 
-        // update my position in Firebase
-        database.ref('users/' + userId).set({
-          lat: userPosition.lat,
-          lng: userPosition.lng,
-          sos: sosActive,
-          timestamp: Date.now()
-        });
+        if (moved) {
+          lastPosition = newPosition;
+          userPosition = newPosition;
 
-        // refresh police info window if open
+          if (!userMarker) {
+            const scaleSize = window.innerWidth < 600 ? 10 : 14;
+            userMarker = new google.maps.Marker({
+              position: userPosition,
+              map: map,
+              icon: {
+                path: google.maps.SymbolPath.CIRCLE,
+                scale: scaleSize,
+                fillColor: "#4285F4",
+                fillOpacity: 1,
+                strokeWeight: 0,
+              }
+            });
+
+            pulseCircle = new google.maps.Circle({
+              strokeColor: "#4285F4",
+              strokeOpacity: 0.5,
+              strokeWeight: 2,
+              fillColor: "#4285F4",
+              fillOpacity: 0.2,
+              map: map,
+              center: userPosition,
+              radius: pulseRadius
+            });
+
+            requestAnimationFrame(animatePulse);
+          } else {
+            userMarker.setPosition(userPosition);
+            pulseCircle.setCenter(userPosition);
+          }
+
+          database.ref('users/' + userId).set({
+            lat: userPosition.lat,
+            lng: userPosition.lng,
+            sos: sosActive,
+            timestamp: Date.now()
+          });
+        }
+
         if (openInfoWindow && openInfoWindow.station) {
           updateInfoWindow(openInfoWindow, openInfoWindow.station);
         }
@@ -163,7 +192,6 @@ function initUserLocation() {
   }
 }
 
-// Animate my pulsing circle
 function animatePulse() {
   if (growing) pulseRadius += 5;
   else pulseRadius -= 5;
@@ -176,7 +204,6 @@ function animatePulse() {
   requestAnimationFrame(animatePulse);
 }
 
-// Convert % of screen width to meters
 function screenPercentToMeters(percent) {
   if (!map || !userPosition) return 100;
   const bounds = map.getBounds();
@@ -213,10 +240,9 @@ function triggerSOS() {
     });
   }
 
-  // update in Firebase immediately
   database.ref('users/' + userId).update({
-    lat: userPosition.lat,
-    lng: userPosition.lng,
+    lat: userPosition?.lat || 0,
+    lng: userPosition?.lng || 0,
     sos: sosActive,
     timestamp: Date.now()
   });
@@ -224,7 +250,6 @@ function triggerSOS() {
   alert(sosActive ? "🚨 SOS Activated!" : "✅ SOS Deactivated");
 }
 
-// Listen to other users in Firebase
 function listenForOtherUsers() {
   const usersRef = database.ref('users');
   usersRef.on('value', (snapshot) => {
@@ -232,11 +257,10 @@ function listenForOtherUsers() {
     if (!allUsers) return;
 
     Object.keys(allUsers).forEach(uid => {
-      if (uid === userId) return; // skip myself
+      if (uid === userId) return;
       const data = allUsers[uid];
 
       if (!otherUsers[uid]) {
-        // create marker + optional circle
         const marker = new google.maps.Marker({
           position: { lat: data.lat, lng: data.lng },
           map: map,
@@ -266,7 +290,6 @@ function listenForOtherUsers() {
 
         otherUsers[uid] = { marker, circle, radius: 50, growing: true };
       } else {
-        // update existing marker
         otherUsers[uid].marker.setPosition({ lat: data.lat, lng: data.lng });
         otherUsers[uid].marker.setIcon({
           path: google.maps.SymbolPath.CIRCLE,
@@ -276,7 +299,6 @@ function listenForOtherUsers() {
           strokeWeight: 0,
         });
 
-        // handle SOS pulsing
         if (data.sos) {
           if (!otherUsers[uid].circle) {
             otherUsers[uid].circle = new google.maps.Circle({
@@ -304,7 +326,6 @@ function listenForOtherUsers() {
       }
     });
 
-    // cleanup removed users
     Object.keys(otherUsers).forEach(uid => {
       if (!allUsers[uid]) {
         if (otherUsers[uid].circle) otherUsers[uid].circle.setMap(null);
@@ -315,7 +336,6 @@ function listenForOtherUsers() {
   });
 }
 
-// Animate pulsing circle for other SOS users
 function animateOtherPulse(uid) {
   const u = otherUsers[uid];
   if (!u || !u.circle) return;
@@ -330,7 +350,6 @@ function animateOtherPulse(uid) {
   requestAnimationFrame(() => animateOtherPulse(uid));
 }
 
-// ================= POLICE STATIONS =================
 function loadPoliceStations() {
   const stationsRef = database.ref('police_stations');
   stationsRef.on('value', (snapshot) => {
@@ -376,6 +395,9 @@ function updateInfoWindow(infoWindow, station, showButton = false) {
     const distance = getDistance(userPosition.lat, userPosition.lng, station.lat, station.lng);
     distanceText = `<p>Distance: ${distance.toFixed(2)} km</p>`;
   }
+
+  let phoneHTML = `<p>Phone: ${station.phone ? `<a href="tel:${station.phone}" style="color:blue;text-decoration:underline">${station.phone}</a>` : 'N/A'}</p>`;
+
   let buttonHTML = '';
   if (showButton && userPosition) {
     buttonHTML = `<button class="info-btn" onclick="createRoute(${station.lat}, ${station.lng})">Create Route</button>`;
@@ -383,7 +405,7 @@ function updateInfoWindow(infoWindow, station, showButton = false) {
   infoWindow.setContent(`
     <div>
       <h3>${station.name}</h3>
-      <p>Phone: ${station.phone || 'N/A'}</p>
+      ${phoneHTML}
       ${distanceText}
       ${buttonHTML}
     </div>
@@ -394,7 +416,7 @@ function createRoute(lat, lng) {
   if (!userPosition) return alert("User location not available");
   if (!directionsService || !directionsRenderer) return;
 
-  directionsRenderer.setDirections({ routes: [] }); // clear old
+  directionsRenderer.setDirections({ routes: [] });
   directionsService.route({
     origin: userPosition,
     destination: { lat, lng },
@@ -408,7 +430,6 @@ function createRoute(lat, lng) {
   });
 }
 
-// distance calc in km
 function getDistance(lat1, lng1, lat2, lng2) {
   function toRad(x) { return x * Math.PI / 180; }
   const R = 6371;
