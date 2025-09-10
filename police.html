@@ -86,6 +86,7 @@ let directionsService, directionsRenderer;
 
 let lastPosition = null;
 const MOVE_THRESHOLD_METERS = 5;
+let hasStartedMoving = false; // 🚨 NEW FLAG
 
 function initMap() {
   map = new google.maps.Map(document.getElementById('map'), {
@@ -124,7 +125,7 @@ function initUserLocation() {
 
         let moved = false;
         if (!lastPosition) {
-          moved = true;
+          lastPosition = newPosition; // just store, don’t push yet
         } else {
           const distance = getDistance(
             lastPosition.lat,
@@ -137,41 +138,44 @@ function initUserLocation() {
           }
         }
 
+        userPosition = newPosition;
+
+        if (!userMarker) {
+          const scaleSize = window.innerWidth < 600 ? 10 : 14;
+          userMarker = new google.maps.Marker({
+            position: userPosition,
+            map: map,
+            icon: {
+              path: google.maps.SymbolPath.CIRCLE,
+              scale: scaleSize,
+              fillColor: "#4285F4",
+              fillOpacity: 1,
+              strokeWeight: 0,
+            }
+          });
+
+          pulseCircle = new google.maps.Circle({
+            strokeColor: "#4285F4",
+            strokeOpacity: 0.5,
+            strokeWeight: 2,
+            fillColor: "#4285F4",
+            fillOpacity: 0.2,
+            map: map,
+            center: userPosition,
+            radius: pulseRadius
+          });
+
+          requestAnimationFrame(animatePulse);
+        } else {
+          userMarker.setPosition(userPosition);
+          pulseCircle.setCenter(userPosition);
+        }
+
         if (moved) {
           lastPosition = newPosition;
-          userPosition = newPosition;
+          hasStartedMoving = true; // mark movement
 
-          if (!userMarker) {
-            const scaleSize = window.innerWidth < 600 ? 10 : 14;
-            userMarker = new google.maps.Marker({
-              position: userPosition,
-              map: map,
-              icon: {
-                path: google.maps.SymbolPath.CIRCLE,
-                scale: scaleSize,
-                fillColor: "#4285F4",
-                fillOpacity: 1,
-                strokeWeight: 0,
-              }
-            });
-
-            pulseCircle = new google.maps.Circle({
-              strokeColor: "#4285F4",
-              strokeOpacity: 0.5,
-              strokeWeight: 2,
-              fillColor: "#4285F4",
-              fillOpacity: 0.2,
-              map: map,
-              center: userPosition,
-              radius: pulseRadius
-            });
-
-            requestAnimationFrame(animatePulse);
-          } else {
-            userMarker.setPosition(userPosition);
-            pulseCircle.setCenter(userPosition);
-          }
-
+          // 🚨 Only update DB AFTER start moving
           database.ref('users/' + userId).set({
             lat: userPosition.lat,
             lng: userPosition.lng,
@@ -240,12 +244,15 @@ function triggerSOS() {
     });
   }
 
-  database.ref('users/' + userId).update({
-    lat: userPosition?.lat || 0,
-    lng: userPosition?.lng || 0,
-    sos: sosActive,
-    timestamp: Date.now()
-  });
+  // 🚨 Only write SOS if already moving
+  if (hasStartedMoving) {
+    database.ref('users/' + userId).update({
+      lat: userPosition?.lat || 0,
+      lng: userPosition?.lng || 0,
+      sos: sosActive,
+      timestamp: Date.now()
+    });
+  }
 
   alert(sosActive ? "🚨 SOS Activated!" : "✅ SOS Deactivated");
 }
