@@ -79,14 +79,13 @@ if (!userId) {
   localStorage.setItem("userId", userId);
 }
 let sosActive = false;
-let otherUsers = {};
 let policeMarkers = [];
 let openInfoWindow = null;
 let directionsService, directionsRenderer;
 
 let lastPosition = null;
 const MOVE_THRESHOLD_METERS = 5;
-let hasStartedMoving = false; // 🚨 NEW FLAG
+let hasStartedMoving = false;
 
 function initMap() {
   map = new google.maps.Map(document.getElementById('map'), {
@@ -99,7 +98,6 @@ function initMap() {
   directionsRenderer.setMap(map);
 
   initUserLocation();
-  listenForOtherUsers();
   loadPoliceStations();
 
   document.getElementById('sos-btn').addEventListener('click', triggerSOS);
@@ -125,7 +123,7 @@ function initUserLocation() {
 
         let moved = false;
         if (!lastPosition) {
-          lastPosition = newPosition; // just store, don’t push yet
+          lastPosition = newPosition;
         } else {
           const distance = getDistance(
             lastPosition.lat,
@@ -173,9 +171,8 @@ function initUserLocation() {
 
         if (moved) {
           lastPosition = newPosition;
-          hasStartedMoving = true; // mark movement
+          hasStartedMoving = true;
 
-          // 🚨 Only update DB AFTER start moving
           database.ref('users/' + userId).set({
             lat: userPosition.lat,
             lng: userPosition.lng,
@@ -244,117 +241,14 @@ function triggerSOS() {
     });
   }
 
-  // 🚨 Only write SOS if already moving
-  if (hasStartedMoving) {
-    database.ref('users/' + userId).update({
-      lat: userPosition?.lat || 0,
-      lng: userPosition?.lng || 0,
-      sos: sosActive,
-      timestamp: Date.now()
-    });
+  const updateData = { sos: sosActive, timestamp: Date.now() };
+  if (hasStartedMoving && userPosition) {
+    updateData.lat = userPosition.lat;
+    updateData.lng = userPosition.lng;
   }
+  database.ref('users/' + userId).update(updateData);
 
   alert(sosActive ? "🚨 SOS Activated!" : "✅ SOS Deactivated");
-}
-
-function listenForOtherUsers() {
-  const usersRef = database.ref('users');
-  usersRef.on('value', (snapshot) => {
-    const allUsers = snapshot.val();
-    if (!allUsers) return;
-
-    Object.keys(allUsers).forEach(uid => {
-      if (uid === userId) return;
-      const data = allUsers[uid];
-
-      if (!otherUsers[uid]) {
-        const marker = new google.maps.Marker({
-          position: { lat: data.lat, lng: data.lng },
-          map: map,
-          icon: {
-            path: google.maps.SymbolPath.CIRCLE,
-            scale: 10,
-            fillColor: data.sos ? "#FF0000" : "#4285F4",
-            fillOpacity: 1,
-            strokeWeight: 0,
-          }
-        });
-
-        let circle = null;
-        if (data.sos) {
-          circle = new google.maps.Circle({
-            strokeColor: "#FF0000",
-            strokeOpacity: 0.5,
-            strokeWeight: 2,
-            fillColor: "#FF0000",
-            fillOpacity: 0.2,
-            map: map,
-            center: { lat: data.lat, lng: data.lng },
-            radius: 50
-          });
-          animateOtherPulse(uid);
-        }
-
-        otherUsers[uid] = { marker, circle, radius: 50, growing: true };
-      } else {
-        otherUsers[uid].marker.setPosition({ lat: data.lat, lng: data.lng });
-        otherUsers[uid].marker.setIcon({
-          path: google.maps.SymbolPath.CIRCLE,
-          scale: 10,
-          fillColor: data.sos ? "#FF0000" : "#4285F4",
-          fillOpacity: 1,
-          strokeWeight: 0,
-        });
-
-        if (data.sos) {
-          if (!otherUsers[uid].circle) {
-            otherUsers[uid].circle = new google.maps.Circle({
-              strokeColor: "#FF0000",
-              strokeOpacity: 0.5,
-              strokeWeight: 2,
-              fillColor: "#FF0000",
-              fillOpacity: 0.2,
-              map: map,
-              center: { lat: data.lat, lng: data.lng },
-              radius: 50
-            });
-            otherUsers[uid].radius = 50;
-            otherUsers[uid].growing = true;
-            animateOtherPulse(uid);
-          } else {
-            otherUsers[uid].circle.setCenter({ lat: data.lat, lng: data.lng });
-          }
-        } else {
-          if (otherUsers[uid].circle) {
-            otherUsers[uid].circle.setMap(null);
-            otherUsers[uid].circle = null;
-          }
-        }
-      }
-    });
-
-    Object.keys(otherUsers).forEach(uid => {
-      if (!allUsers[uid]) {
-        if (otherUsers[uid].circle) otherUsers[uid].circle.setMap(null);
-        otherUsers[uid].marker.setMap(null);
-        delete otherUsers[uid];
-      }
-    });
-  });
-}
-
-function animateOtherPulse(uid) {
-  const u = otherUsers[uid];
-  if (!u || !u.circle) return;
-
-  if (u.growing) u.radius += 3;
-  else u.radius -= 3;
-
-  if (u.radius > screenPercentToMeters(15)) u.growing = false;
-  if (u.radius < 20) u.growing = true;
-
-  u.circle.setRadius(u.radius);
-  requestAnimationFrame(() => animateOtherPulse(uid));
 }
 
 function loadPoliceStations() {
