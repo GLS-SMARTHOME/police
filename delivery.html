@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Delivery Map - Kinshasa with ETA</title>
+<title>Delivery Map - Kinshasa Clean</title>
 <style>
   html, body {
     height: 100%;
@@ -37,15 +37,21 @@
 <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyDjdnkFWOnh1u2cWf5RFURytU8Zk3fmOhk&libraries=geometry"></script>
 <script>
 function initMap() {
-  // Map center (Kinshasa)
   const center = { lat: -4.4419, lng: 15.2663 };
 
   const map = new google.maps.Map(document.getElementById("map"), {
     zoom: 12,
     center: center,
+    disableDefaultUI: true, // remove all default UI
+    styles: [ // hide labels and points of interest
+      { featureType: "all", elementType: "labels", stylers: [{ visibility: "off" }] },
+      { featureType: "poi", elementType: "all", stylers: [{ visibility: "off" }] },
+      { featureType: "transit", elementType: "all", stylers: [{ visibility: "off" }] },
+      { featureType: "road", elementType: "labels", stylers: [{ visibility: "off" }] },
+    ]
   });
 
-  // Customer marker (fixed)
+  // Customer marker
   const customerPos = { lat: -4.4400, lng: 15.2600 };
   const customerMarker = new google.maps.Marker({
     position: customerPos,
@@ -66,7 +72,7 @@ function initMap() {
     },
   });
 
-  // Directions Service and Renderer
+  // Directions Service & Renderer
   const directionsService = new google.maps.DirectionsService();
   const directionsRenderer = new google.maps.DirectionsRenderer({
     map: map,
@@ -74,19 +80,16 @@ function initMap() {
     polylineOptions: { strokeColor: "#FF0000", strokeWeight: 4, strokeOpacity: 0.7 }
   });
 
-  // Function to update route and ETA
   function updateRoute() {
     directionsService.route(
       {
         origin: deliveryMarker.getPosition(),
         destination: customerMarker.getPosition(),
-        travelMode: google.maps.TravelMode.DRIVING, // can also use BICYCLING
+        travelMode: google.maps.TravelMode.DRIVING,
       },
       (result, status) => {
         if (status === google.maps.DirectionsStatus.OK) {
           directionsRenderer.setDirections(result);
-
-          // Extract ETA in minutes
           const leg = result.routes[0].legs[0];
           document.getElementById("eta").innerText = `ETA: ${leg.duration.text}`;
         } else {
@@ -100,10 +103,8 @@ function initMap() {
   // Initial route
   updateRoute();
 
-  // Update route every time bike moves
-  deliveryMarker.addListener("position_changed", () => {
-    updateRoute();
-  });
+  // Update route when bike moves
+  deliveryMarker.addListener("position_changed", updateRoute);
 
   // Optional: alert when delivery is close (<50m)
   let alertShown = false;
@@ -119,7 +120,6 @@ function initMap() {
   });
 }
 
-// Initialize map
 window.onload = initMap;
 </script>
 </body>
