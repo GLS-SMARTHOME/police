@@ -73,6 +73,7 @@ const database = firebase.database();
 
 let map, userMarker, pulseCircle, userPosition;
 let pulseRadius = 0, growing = true, firstUpdate = true;
+let pulseScale = 1.0, pulseGrowing = true;
 let userId = localStorage.getItem("userId");
 if (!userId) {
   userId = "user_" + Date.now();
@@ -91,6 +92,10 @@ function initMap() {
   map = new google.maps.Map(document.getElementById('map'), {
     zoom: 15,
     center: { lat: 0, lng: 0 },
+    mapTypeControl: false,
+    streetViewControl: false,
+    fullscreenControl: false,
+    zoomControl: false,
   });
 
   directionsService = new google.maps.DirectionsService();
@@ -194,6 +199,24 @@ function initUserLocation() {
 }
 
 function animatePulse() {
+  // Pulse for user icon
+  if (pulseGrowing) pulseScale += 0.02;
+  else pulseScale -= 0.02;
+
+  if (pulseScale >= 1.5) pulseGrowing = false;
+  if (pulseScale <= 1.0) pulseGrowing = true;
+
+  if (userMarker) {
+    userMarker.setIcon({
+      path: google.maps.SymbolPath.CIRCLE,
+      scale: (window.innerWidth < 600 ? 10 : 14) * pulseScale,
+      fillColor: sosActive ? "#FF0000" : "#4285F4",
+      fillOpacity: 1,
+      strokeWeight: 0,
+    });
+  }
+
+  // Pulse for outer circle
   if (growing) pulseRadius += 5;
   else pulseRadius -= 5;
 
@@ -202,6 +225,7 @@ function animatePulse() {
   if (pulseRadius < 20) growing = true;
 
   if (pulseCircle) pulseCircle.setRadius(pulseRadius);
+
   requestAnimationFrame(animatePulse);
 }
 
@@ -223,21 +247,11 @@ function screenPercentToMeters(percent) {
 
 function triggerSOS() {
   sosActive = !sosActive;
-  const color = sosActive ? "#FF0000" : "#4285F4";
 
-  if (userMarker) {
-    userMarker.setIcon({
-      path: google.maps.SymbolPath.CIRCLE,
-      scale: window.innerWidth < 600 ? 10 : 14,
-      fillColor: color,
-      fillOpacity: 1,
-      strokeWeight: 0,
-    });
-  }
   if (pulseCircle) {
     pulseCircle.setOptions({
-      strokeColor: color,
-      fillColor: color
+      strokeColor: sosActive ? "#FF0000" : "#4285F4",
+      fillColor: sosActive ? "#FF0000" : "#4285F4"
     });
   }
 
