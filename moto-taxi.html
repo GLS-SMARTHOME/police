@@ -57,6 +57,23 @@
   .accept-btn:hover { background: #218838; }
   .start-btn { background: #007bff; color: #fff; margin-left: 5px; }
   .start-btn:hover { background: #0056b3; }
+
+  .nav-choice {
+    margin-top: 5px;
+  }
+  .nav-btn {
+    display: inline-block;
+    margin-right: 5px;
+    padding: 4px 8px;
+    font-size: 13px;
+    border-radius: 5px;
+    cursor: pointer;
+    color: #fff;
+  }
+  .nav-google { background: #4285F4; }
+  .nav-google:hover { background: #357ae8; }
+  .nav-apple { background: #000000; }
+  .nav-apple:hover { background: #333333; }
 </style>
 </head>
 <body>
@@ -185,7 +202,6 @@ function initMap() {
 function acceptRoute(bikeLat, bikeLng, bikeName, bikePrice, destLat, destLng) {
   if (!userLatLng) { alert("User location not available yet."); return; }
 
-  // Remove all other bike markers
   allMarkers.forEach(m => {
     if (m.getPosition().lat() !== bikeLat || m.getPosition().lng() !== bikeLng) m.setMap(null);
   });
@@ -194,13 +210,12 @@ function acceptRoute(bikeLat, bikeLng, bikeName, bikePrice, destLat, destLng) {
   const bikePos = new google.maps.LatLng(bikeLat, bikeLng);
   const destPos = new google.maps.LatLng(destLat, destLng);
 
-  // Add destination marker
   if (destMarker) destMarker.setMap(null);
   destMarker = new google.maps.Marker({
     position: destPos,
     map: map,
     title: "Destination",
-    icon: { url: "https://maps.google.com/mapfiles/ms/icons/green-dot.png" }
+    icon: { url: "https://imgur.com/iZe8ie4.png" }
   });
 
   directionsService.route({ origin: userLatLng, destination: bikePos, travelMode: google.maps.TravelMode.DRIVING }, (result, status) => {
@@ -214,7 +229,10 @@ function acceptRoute(bikeLat, bikeLng, bikeName, bikePrice, destLat, destLng) {
             <h3>${bikeName}</h3>
             <p>Prix: <span class="price">${bikePrice}</span></p>
             <p class="eta">ETA (You → Bike): ${eta}</p>
-            <div class="start-btn" onclick="startDriving(${bikeLat}, ${bikeLng})">Start Driving</div>
+            <div class="nav-choice">
+              <div class="nav-btn nav-google" onclick="openGoogleMaps(${bikeLat}, ${bikeLng})">Google Maps</div>
+              <div class="nav-btn nav-apple" onclick="openAppleMaps(${bikeLat}, ${bikeLng})">Apple Maps</div>
+            </div>
           </div>
         `);
         currentInfoWindow.open(map, activeMarker);
@@ -223,8 +241,15 @@ function acceptRoute(bikeLat, bikeLng, bikeName, bikePrice, destLat, destLng) {
   });
 }
 
-function startDriving(lat, lng) {
+// Open Google Maps
+function openGoogleMaps(lat, lng) {
   const url = `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}&travelmode=driving`;
+  window.open(url, "_blank");
+}
+
+// Open Apple Maps
+function openAppleMaps(lat, lng) {
+  const url = `https://maps.apple.com/?daddr=${lat},${lng}&dirflg=d`;
   window.open(url, "_blank");
 }
 
