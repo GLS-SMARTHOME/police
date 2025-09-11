@@ -1,124 +1,234 @@
 <!DOCTYPE html>
-<html lang="fr">
+<html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <title>Panier</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <style>
-    body {
-      font-family: Arial, sans-serif;
-      padding: 20px;
-      background: #f9f9f9;
-    }
-    h1 {
-      color: #4CAF50;
-      text-align: center;
-      margin-bottom: 30px;
-    }
-    .cart-item {
-      display: flex;
-      align-items: center;
-      background: white;
-      margin-bottom: 15px;
-      padding: 15px;
-      border-radius: 8px;
-      box-shadow: 0 1px 5px rgba(0,0,0,0.1);
-    }
-    .cart-item img {
-      width: 80px;
-      height: 60px;
-      object-fit: contain;
-      margin-right: 20px;
-      border-radius: 5px;
-    }
-    .item-info {
-      flex-grow: 1;
-    }
-    .item-name {
-      font-weight: bold;
-      margin-bottom: 5px;
-      font-size: 1.1em;
-      color: #222;
-    }
-    .item-price {
-      color: #4CAF50;
-      font-weight: bold;
-      font-size: 1em;
-    }
-    .empty-msg {
-      margin-top: 50px;
-      text-align: center;
-      color: #777;
-      font-style: italic;
-      font-size: 1.2em;
-    }
-    a.back-link {
-      display: block;
-      margin-top: 30px;
-      text-align: center;
-      color: #4CAF50;
-      text-decoration: none;
-      font-weight: bold;
-      font-size: 1.1em;
-    }
-    a.back-link:hover {
-      color: #388e3c;
-    }
-  </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Delivery Map - Kinshasa Live</title>
+<style>
+  html, body {
+    height: 100%;
+    margin: 0;
+    padding: 0;
+    font-family: Arial, sans-serif;
+  }
+  #map {
+    height: 100%;
+    width: 100%;
+  }
 
-  <!-- Firebase SDK -->
-  <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
+  .pulse {
+    width: 25px;
+    height: 25px;
+    background: rgba(0, 123, 255, 0.5);
+    border: 3px solid #007bff;
+    border-radius: 50%;
+    position: absolute;
+    transform: translate(-50%, -50%);
+    animation: pulse 1.2s infinite;
+  }
+
+  @keyframes pulse {
+    0% { transform: translate(-50%, -50%) scale(0.7); opacity: 1; }
+    70% { transform: translate(-50%, -50%) scale(1.5); opacity: 0; }
+    100% { transform: translate(-50%, -50%) scale(0.7); opacity: 0; }
+  }
+
+  .info-window {
+    font-family: Arial, sans-serif;
+    border-radius: 10px;
+    padding: 10px;
+    box-shadow: 0 4px 10px rgba(0,0,0,0.3);
+    background: #fff;
+    max-width: 250px;
+  }
+  .info-window h3 { margin: 0 0 5px 0; font-size: 16px; color: #007bff; }
+  .info-window p { margin: 3px 0; font-size: 14px; color: #333; }
+  .eta { font-weight: bold; color: #dc3545; }
+  .accept-btn, .start-btn {
+    display: inline-block;
+    margin-top: 8px;
+    padding: 6px 12px;
+    font-size: 14px;
+    border-radius: 6px;
+    text-align: center;
+    cursor: pointer;
+  }
+  .accept-btn { background: #28a745; color: #fff; }
+  .accept-btn:hover { background: #218838; }
+  .start-btn { background: #007bff; color: #fff; margin-left: 5px; }
+  .start-btn:hover { background: #0056b3; }
+</style>
 </head>
 <body>
-  <h1>Votre Panier</h1>
-  <div id="cartContainer" role="list"></div>
-  <a href="index.html" class="back-link" aria-label="Retour à la boutique">← Retour à la boutique</a>
+<div id="map"></div>
 
-  <script>
-    // Firebase Config (same as index.html)
-    const firebaseConfig = {
-  apiKey: "AIzaSyCbUMHr-1pWWlhlFuyG8E4AdfOYn5tWIhM",
-  authDomain: "food-details-554cf.firebaseapp.com",
-  databaseURL: "https://food-details-554cf-default-rtdb.firebaseio.com",
-  projectId: "food-details-554cf",
-  storageBucket: "food-details-554cf.firebasestorage.app",
-  messagingSenderId: "617865162295",
-  appId: "1:617865162295:web:e8e44fc0c45146ae2819b2",
-  measurementId: "G-VGYFY56WSV"
+<!-- Firebase -->
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+
+<!-- Google Maps -->
+<script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyDjdnkFWOnh1u2cWf5RFURytU8Zk3fmOhk"></script>
+
+<script>
+// Firebase config
+const firebaseConfig = {
+  apiKey: "AIzaSyAIlkvwyaF6FPPbXBJDqHwuTS5S3QKG3l8",
+  authDomain: "xoxo-store.firebaseapp.com",
+  databaseURL: "https://xoxo-store-default-rtdb.firebaseio.com",
+  projectId: "xoxo-store",
+  storageBucket: "xoxo-store.firebasestorage.app",
+  messagingSenderId: "667290233046",
+  appId: "1:667290233046:web:dbbc9130ff38b0900f8177",
+  measurementId: "G-XMJVCK8KMD"
+};
+firebase.initializeApp(firebaseConfig);
+const db = firebase.database();
+
+let map;
+let userPulse;
+let userLatLng = null; 
+let currentInfoWindow = null;
+let directionsService;
+let directionsRenderer;
+let activeMarker = null; 
+let allMarkers = [];
+let destMarker = null;
+
+function initMap() {
+  const center = { lat: -4.4419, lng: 15.2663 };
+  map = new google.maps.Map(document.getElementById("map"), { zoom: 12, center: center });
+
+  directionsService = new google.maps.DirectionsService();
+  directionsRenderer = new google.maps.DirectionsRenderer({ map: map, suppressMarkers: true, polylineOptions: { strokeColor: "#007bff", strokeWeight: 5 } });
+
+  function createPulseMarker(position) {
+    function PulseOverlay(position, map) {
+      this.position = position; this.map = map; this.div = null; this.setMap(map);
+    }
+    PulseOverlay.prototype = new google.maps.OverlayView();
+    PulseOverlay.prototype.onAdd = function() {
+      const div = document.createElement('div'); div.className = 'pulse'; this.div = div;
+      this.getPanes().overlayMouseTarget.appendChild(div);
     };
+    PulseOverlay.prototype.draw = function() {
+      const pos = this.getProjection().fromLatLngToDivPixel(this.position);
+      if (this.div) { this.div.style.left = pos.x + 'px'; this.div.style.top = pos.y + 'px'; }
+    };
+    PulseOverlay.prototype.updatePosition = function(position) { this.position = position; this.draw(); };
+    return new PulseOverlay(position, map);
+  }
 
-    firebase.initializeApp(firebaseConfig);
-    const db = firebase.firestore();
+  if (navigator.geolocation) {
+    navigator.geolocation.watchPosition((position) => {
+      userLatLng = new google.maps.LatLng(position.coords.latitude, position.coords.longitude);
+      if (!userPulse) { userPulse = createPulseMarker(userLatLng); map.panTo(userLatLng); }
+      else { userPulse.updatePosition(userLatLng); }
+    }, (err) => console.error(err), { enableHighAccuracy: true, maximumAge: 0 });
+  }
 
-    window.addEventListener('DOMContentLoaded', () => {
-      const cartContainer = document.getElementById('cartContainer');
+  const markersRef = db.ref("markers");
+  markersRef.on("value", (snapshot) => {
+    const data = snapshot.val();
+    if (!data) return;
 
-      db.collection('cart').orderBy('addedAt', 'desc').get()
-      .then(snapshot => {
-        if (snapshot.empty) {
-          cartContainer.innerHTML = `<div class="empty-msg">Votre panier est vide.</div>`;
-          return;
+    allMarkers.forEach(m => m.setMap(null));
+    allMarkers = [];
+
+    Object.keys(data).forEach((key) => {
+      const item = data[key];
+      const marker = new google.maps.Marker({ 
+        position: { lat: item.lat, lng: item.lng }, 
+        map: map, 
+        title: item.name || "Bike", 
+        icon: { url: "https://i.imgur.com/Fm6DstP.png", scaledSize: new google.maps.Size(30, 30), origin: new google.maps.Point(0,0), anchor: new google.maps.Point(15,15) }
+      });
+      allMarkers.push(marker);
+
+      const infoWindow = new google.maps.InfoWindow();
+      marker.addListener('click', () => {
+        if (currentInfoWindow) currentInfoWindow.close();
+        activeMarker = marker;
+
+        infoWindow.setContent(`
+          <div class="info-window">
+            <h3>${item.name || "Bike"}</h3>
+            <p>Prix: <span class="price">${item.price || "N/A"}</span></p>
+            <p class="eta">ETA: calculating...</p>
+            <div class="accept-btn" onclick="acceptRoute(${item.lat}, ${item.lng}, '${item.name || "Bike"}', '${item.price || "N/A"}', ${item.dest.lat || 0}, ${item.dest.lng || 0})">Accept</div>
+          </div>
+        `);
+        infoWindow.open(map, marker);
+        currentInfoWindow = infoWindow;
+
+        if (item.dest) {
+          directionsService.route({ origin: marker.getPosition(), destination: item.dest, travelMode: google.maps.TravelMode.DRIVING }, (result, status) => {
+            if (status === "OK") {
+              directionsRenderer.setDirections(result);
+              const eta = result.routes[0].legs[0].duration.text;
+              infoWindow.setContent(`
+                <div class="info-window">
+                  <h3>${item.name || "Bike"}</h3>
+                  <p>Prix: <span class="price">${item.price || "N/A"}</span></p>
+                  <p class="eta">ETA: ${eta}</p>
+                  <div class="accept-btn" onclick="acceptRoute(${item.lat}, ${item.lng}, '${item.name || "Bike"}', '${item.price || "N/A"}', ${item.dest.lat || 0}, ${item.dest.lng || 0})">Accept</div>
+                </div>
+              `);
+            }
+          });
         }
-
-        snapshot.forEach(doc => {
-          const item = doc.data();
-          const itemHtml = `
-            <div class="cart-item" role="listitem">
-              <img src="${item.image}" alt="${item.name}" />
-              <div class="item-info">
-                <div class="item-name">${item.name}</div>
-                <div class="item-price">${item.price.toFixed(2)} €</div>
-              </div>
-            </div>
-          `;
-          cartContainer.insertAdjacentHTML('beforeend', itemHtml);
-        });
-      })
-      .catch(err => {
-        cartContainer.innerHTML = `<div class="empty-msg">Erreur de chargement du panier: ${err.message}</div>`;
       });
     });
-  </script>
+  });
+}
+
+// Accept route and show destination pin
+function acceptRoute(bikeLat, bikeLng, bikeName, bikePrice, destLat, destLng) {
+  if (!userLatLng) { alert("User location not available yet."); return; }
+
+  // Remove all other bike markers
+  allMarkers.forEach(m => {
+    if (m.getPosition().lat() !== bikeLat || m.getPosition().lng() !== bikeLng) m.setMap(null);
+  });
+  allMarkers = allMarkers.filter(m => m.getPosition().lat() === bikeLat && m.getPosition().lng() === bikeLng);
+
+  const bikePos = new google.maps.LatLng(bikeLat, bikeLng);
+  const destPos = new google.maps.LatLng(destLat, destLng);
+
+  // Add destination marker
+  if (destMarker) destMarker.setMap(null);
+  destMarker = new google.maps.Marker({
+    position: destPos,
+    map: map,
+    title: "Destination",
+    icon: { url: "https://maps.google.com/mapfiles/ms/icons/green-dot.png" }
+  });
+
+  directionsService.route({ origin: userLatLng, destination: bikePos, travelMode: google.maps.TravelMode.DRIVING }, (result, status) => {
+    if (status === "OK") {
+      directionsRenderer.setDirections(result);
+      const eta = result.routes[0].legs[0].duration.text;
+
+      if (currentInfoWindow && activeMarker) {
+        currentInfoWindow.setContent(`
+          <div class="info-window">
+            <h3>${bikeName}</h3>
+            <p>Prix: <span class="price">${bikePrice}</span></p>
+            <p class="eta">ETA (You → Bike): ${eta}</p>
+            <div class="start-btn" onclick="startDriving(${bikeLat}, ${bikeLng})">Start Driving</div>
+          </div>
+        `);
+        currentInfoWindow.open(map, activeMarker);
+      }
+    } else { console.error("Route request failed: " + status); }
+  });
+}
+
+function startDriving(lat, lng) {
+  const url = `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}&travelmode=driving`;
+  window.open(url, "_blank");
+}
+
+window.onload = initMap;
+</script>
 </body>
 </html>
