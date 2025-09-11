@@ -83,10 +83,11 @@ let sosActive = false;
 let policeMarkers = [];
 let openInfoWindow = null;
 let directionsService, directionsRenderer;
-
 let lastPosition = null;
 const MOVE_THRESHOLD_METERS = 5;
 let hasStartedMoving = false;
+
+let otherUsersMarkers = {}; // for SOS markers of other users
 
 function initMap() {
   map = new google.maps.Map(document.getElementById('map'), {
@@ -104,12 +105,15 @@ function initMap() {
 
   initUserLocation();
   loadPoliceStations();
+  listenOtherUsersSOS();
 
   document.getElementById('sos-btn').addEventListener('click', triggerSOS);
 
   window.addEventListener("beforeunload", () => {
     database.ref("users/" + userId).remove();
   });
+
+  requestAnimationFrame(animateOtherSOS);
 }
 
 function initUserLocation() {
@@ -353,6 +357,65 @@ function getDistance(lat1, lng1, lat2, lng2) {
   const a = Math.sin(dLat/2)**2 + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng/2)**2;
   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
   return R * c;
+}
+
+// ------------------ Other Users SOS ------------------
+function listenOtherUsersSOS() {
+  const usersRef = database.ref('users');
+  usersRef.on('value', snapshot => {
+    const users = snapshot.val() || {};
+
+    // Remove markers for users no longer active or not SOS
+    Object.keys(otherUsersMarkers).forEach(uid => {
+      if (!users[uid] || !users[uid].sos) {
+        otherUsersMarkers[uid].setMap(null);
+        delete otherUsersMarkers[uid];
+      }
+    });
+
+    // Add or update SOS markers
+    Object.keys(users).forEach(uid => {
+      if (uid === userId) return; // skip self
+      const data = users[uid];
+      if (data.sos) {
+        if (!otherUsersMarkers[uid]) {
+          const marker = new google.maps.Marker({
+            position: { lat: data.lat, lng: data.lng },
+            map: map,
+            icon: {
+              path: google.maps.SymbolPath.CIRCLE,
+              scale: (window.innerWidth < 600 ? 10 : 14),
+              fillColor: "#FF0000",
+              fillOpacity: 1,
+              strokeWeight: 0,
+            }
+          });
+          otherUsersMarkers[uid] = marker;
+        } else {
+          otherUsersMarkers[uid].setPosition({ lat: data.lat, lng: data.lng });
+        }
+      }
+    });
+  });
+}
+
+function animateOtherSOS() {
+  const scaleMin = window.innerWidth < 600 ? 10 : 14;
+  const scaleMax = scaleMin * 1.5;
+  const t = (Date.now() % 1000) / 1000; // 1 sec cycle
+  const scale = scaleMin + (scaleMax - scaleMin) * Math.abs(Math.sin(t * Math.PI * 2));
+
+  Object.values(otherUsersMarkers).forEach(marker => {
+    marker.setIcon({
+      path: google.maps.SymbolPath.CIRCLE,
+      scale: scale,
+      fillColor: "#FF0000",
+      fillOpacity: 1,
+      strokeWeight: 0
+    });
+  });
+
+  requestAnimationFrame(animateOtherSOS);
 }
 </script>
 
